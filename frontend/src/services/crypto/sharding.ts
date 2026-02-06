@@ -1,9 +1,16 @@
 // File Sharding Service - Zero Knowledge Vault
 // Splits encrypted files into 3 shards with no metadata
 
-import { v4 as uuidv4 } from 'uuid';
-
 const SHARD_COUNT = 3;
+
+// Simple UUID generator for React Native
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export interface Shard {
   id: string; // Random UUID, no relation to original file
