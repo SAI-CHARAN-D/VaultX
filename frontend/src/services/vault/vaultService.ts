@@ -2,7 +2,7 @@
 // Orchestrates encryption, sharding, upload/download
 // All operations happen client-side
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { encryptDocument, decryptDocument } from '../crypto/encryption';
 import { splitIntoShards, reassembleShards, Shard } from '../crypto/sharding';
