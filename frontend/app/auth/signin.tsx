@@ -1,5 +1,5 @@
 // VaultX Sign In Screen
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +16,23 @@ export default function SignInScreen() {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   
   const { signIn, isLoading, error, clearError, appState, secureData } = useAuthStore();
+
+  // Watch for state changes and navigate accordingly
+  useEffect(() => {
+    if (appState === 'AUTHENTICATED') {
+      // User is authenticated but needs to set up PIN
+      console.log('Navigating to PIN setup');
+      router.replace('/setup/pin');
+    } else if (appState === 'VAULT_LOCKED') {
+      // User has completed setup, go to unlock
+      console.log('Navigating to vault unlock');
+      router.replace('/vault/unlock');
+    } else if (appState === 'VAULT_UNLOCKED') {
+      // Already unlocked
+      console.log('Navigating to vault');
+      router.replace('/vault/');
+    }
+  }, [appState]);
 
   const validate = () => {
     const newErrors: typeof errors = {};
@@ -40,15 +57,11 @@ export default function SignInScreen() {
     clearError();
     if (!validate()) return;
     
+    console.log('Attempting sign in...');
     const success = await signIn(email.trim().toLowerCase(), password);
-    if (success) {
-      // Navigation handled by state change
-      if (secureData?.setupComplete) {
-        router.replace('/vault/unlock');
-      } else {
-        router.replace('/setup/pin');
-      }
-    }
+    console.log('Sign in result:', success, 'App state:', appState);
+    
+    // Navigation will be handled by useEffect watching appState
   };
 
   return (
