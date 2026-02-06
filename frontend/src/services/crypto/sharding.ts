@@ -34,7 +34,7 @@ export function splitIntoShards(encryptedData: string): Shard[] {
     const chunk = encryptedData.substring(start, end);
     
     shards.push({
-      id: uuidv4(), // Random UUID - no relation to original file
+      id: generateUUID(), // Random UUID - no relation to original file
       data: chunk,
       index: i,
     });
@@ -65,13 +65,4 @@ export function reassembleShards(shards: Shard[]): string {
   
   // Concatenate data
   return sortedShards.map(s => s.data).join('');
-}
-
-// Simple UUID generator for React Native
-function uuidv4(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
 }
