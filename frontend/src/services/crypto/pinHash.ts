@@ -4,7 +4,8 @@
 import CryptoJS from 'crypto-js';
 import { generateRandomBytes } from './keyDerivation';
 
-const HASH_ITERATIONS = 50000;
+// Reduced iterations for faster PIN verification on mobile
+const HASH_ITERATIONS = 5000;
 
 /**
  * Hash a PIN with salt using PBKDF2
