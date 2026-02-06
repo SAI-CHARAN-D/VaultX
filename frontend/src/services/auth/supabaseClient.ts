@@ -10,50 +10,66 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 export const STORAGE_BUCKET = 'vault-shards';
 
 let supabaseInstance: SupabaseClient | null = null;
+let AsyncStorageModule: any = null;
 
-// Custom storage that handles SSR gracefully
-const customStorage = {
-  getItem: async (key: string): Promise<string | null> => {
+// Get AsyncStorage module lazily
+function getAsyncStorage() {
+  if (!AsyncStorageModule && typeof window !== 'undefined') {
     try {
-      if (typeof window === 'undefined') return null;
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      AsyncStorageModule = require('@react-native-async-storage/async-storage').default;
+    } catch (e) {
+      console.warn('AsyncStorage not available');
+    }
+  }
+  return AsyncStorageModule;
+}
+
+// Custom storage wrapper
+const storage = {
+  getItem: async (key: string): Promise<string | null> => {
+    const AsyncStorage = getAsyncStorage();
+    if (!AsyncStorage) return null;
+    try {
       return await AsyncStorage.getItem(key);
     } catch {
       return null;
     }
   },
   setItem: async (key: string, value: string): Promise<void> => {
+    const AsyncStorage = getAsyncStorage();
+    if (!AsyncStorage) return;
     try {
-      if (typeof window === 'undefined') return;
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       await AsyncStorage.setItem(key, value);
     } catch {}
   },
   removeItem: async (key: string): Promise<void> => {
+    const AsyncStorage = getAsyncStorage();
+    if (!AsyncStorage) return;
     try {
-      if (typeof window === 'undefined') return;
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       await AsyncStorage.removeItem(key);
     } catch {}
   },
 };
 
-// Lazy initialization to avoid SSR issues
+// Lazy initialization
 export function getSupabase(): SupabaseClient {
   if (!supabaseInstance) {
+    const isClient = typeof window !== 'undefined';
+    
     supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
-        storage: customStorage,
-        autoRefreshToken: typeof window !== 'undefined',
-        persistSession: typeof window !== 'undefined',
+        storage: isClient ? storage : undefined,
+        autoRefreshToken: isClient,
+        persistSession: isClient,
         detectSessionInUrl: false,
+        flowType: 'implicit',
       },
     });
   }
   return supabaseInstance;
 }
 
-// Create a proxy that lazily initializes supabase
+// Backward compatible export
 export const supabase = {
   get auth() {
     return getSupabase().auth;
