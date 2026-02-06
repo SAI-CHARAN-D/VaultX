@@ -110,6 +110,7 @@ export async function getSession(): Promise<User | null> {
   try {
     const supabase = getSupabase();
     const { data: { session } } = await supabase.auth.getSession();
+    console.log('SESSION:', session);
     
     if (session?.user) {
       return {
@@ -120,6 +121,7 @@ export async function getSession(): Promise<User | null> {
     
     return null;
   } catch (error) {
+    console.log('SESSION ERROR:', error);
     return null;
   }
 }
