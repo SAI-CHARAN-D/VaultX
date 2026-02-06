@@ -76,9 +76,9 @@ async function readFileAsBase64(uri: string): Promise<string> {
       throw new Error('File does not exist');
     }
     
-    // Read file as base64
+    // Read file as base64 - use string directly instead of enum
     const content = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: 'base64',
     });
     
     console.log('File read successfully, length:', content.length);
