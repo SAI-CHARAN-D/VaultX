@@ -1,6 +1,6 @@
 // VaultX Upload Screen - Encrypt & Upload Documents
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { Button } from '../../src/components/Button';
 import { LoadingOverlay } from '../../src/components/LoadingOverlay';
 import { useAuthStore } from '../../src/store/authStore';
 import { pickDocument, uploadDocument } from '../../src/services/vault/vaultService';
+import { checkBucketAccess } from '../../src/services/vault/storageService';
 import type { UploadProgress } from '../../src/types';
 
 export default function UploadScreen() {
@@ -20,16 +21,28 @@ export default function UploadScreen() {
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
   
   const { masterKey, user, addDocument } = useAuthStore();
 
+  const addLog = (msg: string) => {
+    console.log(msg);
+    setDebugLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
+  };
+
   const handleSelectFile = async () => {
+    setErrorMessage(null);
+    addLog('Selecting file...');
+    
     const result = await pickDocument();
     
     if (result.success && result.uri) {
+      addLog(`File selected: ${result.name}, size: ${result.size}, type: ${result.mimeType}`);
+      
       // Check file size (50MB limit)
       if ((result.size || 0) > 50 * 1024 * 1024) {
-        Alert.alert('File Too Large', 'Please select a file under 50MB');
+        setErrorMessage('File too large. Please select a file under 50MB');
         return;
       }
       
@@ -39,35 +52,65 @@ export default function UploadScreen() {
         mimeType: result.mimeType || 'application/octet-stream',
         size: result.size || 0,
       });
+    } else if (result.error && result.error !== 'Cancelled') {
+      addLog(`File selection error: ${result.error}`);
+      setErrorMessage(result.error);
+    }
+  };
+
+  const handleTestBucket = async () => {
+    addLog('Testing bucket access...');
+    const result = await checkBucketAccess();
+    if (result.success) {
+      addLog('✓ Bucket access OK');
+      Alert.alert('Success', 'Storage bucket is accessible!');
+    } else {
+      addLog(`✗ Bucket error: ${result.error}`);
+      setErrorMessage(result.error || 'Bucket not accessible');
+      Alert.alert('Error', result.error || 'Bucket not accessible');
     }
   };
 
   const handleUpload = async () => {
+    setErrorMessage(null);
+    setDebugLog([]);
+    
     if (!selectedFile) {
-      Alert.alert('Error', 'Please select a file first');
+      setErrorMessage('Please select a file first');
       return;
     }
     
     if (!masterKey) {
-      Alert.alert('Error', 'Vault is locked. Please unlock first.');
-      router.replace('/vault/unlock');
+      setErrorMessage('Vault is locked. Master key not available.');
+      addLog('ERROR: No master key - vault might be locked');
       return;
     }
     
     if (!user) {
-      Alert.alert('Error', 'Not authenticated. Please sign in.');
-      router.replace('/auth/signin');
+      setErrorMessage('Not authenticated. Please sign in.');
+      addLog('ERROR: No user - not authenticated');
       return;
     }
     
     setIsUploading(true);
     setProgress({ stage: 'encrypting', progress: 0 });
     
-    console.log('Starting upload for:', selectedFile.name);
-    console.log('User ID:', user.id);
-    console.log('Master key available:', !!masterKey);
+    addLog(`Starting upload for: ${selectedFile.name}`);
+    addLog(`User ID: ${user.id}`);
+    addLog(`File URI: ${selectedFile.uri}`);
+    addLog(`File size: ${selectedFile.size} bytes`);
+    addLog(`Master key available: ${!!masterKey}`);
     
     try {
+      // First test bucket access
+      addLog('Checking bucket access...');
+      const bucketCheck = await checkBucketAccess();
+      if (!bucketCheck.success) {
+        throw new Error(bucketCheck.error || 'Bucket not accessible');
+      }
+      addLog('✓ Bucket accessible');
+      
+      addLog('Starting encryption and upload...');
       const result = await uploadDocument(
         selectedFile.uri,
         selectedFile.name,
@@ -76,27 +119,34 @@ export default function UploadScreen() {
         masterKey,
         user.id,
         (prog) => {
-          console.log('Progress:', prog);
+          addLog(`Progress: ${prog.stage} - ${prog.progress}%`);
           setProgress(prog);
         }
       );
       
-      console.log('Upload result:', result);
+      addLog(`Upload result: success=${result.success}`);
       
       if (result.success && result.document) {
+        addLog('✓ Upload complete! Adding to vault...');
         await addDocument(result.document);
+        addLog('✓ Document added to vault');
+        
         Alert.alert(
           'Upload Complete',
           `"${selectedFile.name}" has been encrypted and uploaded securely.`,
           [{ text: 'OK', onPress: () => router.back() }]
         );
       } else {
-        console.error('Upload failed:', result.error);
-        Alert.alert('Upload Failed', result.error || 'Unknown error. Check if vault-shards bucket exists in Supabase.');
+        const error = result.error || 'Unknown error';
+        addLog(`✗ Upload failed: ${error}`);
+        setErrorMessage(error);
+        Alert.alert('Upload Failed', error);
       }
     } catch (error: any) {
-      console.error('Upload exception:', error);
-      Alert.alert('Upload Failed', error.message || 'Unknown error');
+      const errorMsg = error.message || 'Unknown error';
+      addLog(`✗ Exception: ${errorMsg}`);
+      setErrorMessage(errorMsg);
+      Alert.alert('Upload Failed', errorMsg);
     } finally {
       setIsUploading(false);
       setProgress(null);
@@ -131,10 +181,40 @@ export default function UploadScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Upload Document</Text>
-        <View style={styles.placeholder} />
+        <TouchableOpacity style={styles.testButton} onPress={handleTestBucket}>
+          <Ionicons name="checkmark-circle-outline" size={24} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+        {/* Status indicators */}
+        <View style={styles.statusBar}>
+          <View style={styles.statusItem}>
+            <Ionicons 
+              name={user ? "checkmark-circle" : "close-circle"} 
+              size={16} 
+              color={user ? theme.colors.successText : theme.colors.errorText} 
+            />
+            <Text style={styles.statusText}>Auth: {user ? 'OK' : 'No'}</Text>
+          </View>
+          <View style={styles.statusItem}>
+            <Ionicons 
+              name={masterKey ? "checkmark-circle" : "close-circle"} 
+              size={16} 
+              color={masterKey ? theme.colors.successText : theme.colors.errorText} 
+            />
+            <Text style={styles.statusText}>Key: {masterKey ? 'OK' : 'No'}</Text>
+          </View>
+        </View>
+
+        {/* Error message */}
+        {errorMessage && (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle" size={20} color={theme.colors.errorText} />
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          </View>
+        )}
+
         {!selectedFile ? (
           <TouchableOpacity style={styles.dropzone} onPress={handleSelectFile} activeOpacity={0.7}>
             <View style={styles.dropzoneIcon}>
@@ -176,17 +256,27 @@ export default function UploadScreen() {
             <Text style={styles.securityText}>Server sees only encrypted blobs</Text>
           </View>
         </View>
-      </View>
+
+        {/* Debug log */}
+        {debugLog.length > 0 && (
+          <View style={styles.debugBox}>
+            <Text style={styles.debugTitle}>Debug Log:</Text>
+            {debugLog.map((log, i) => (
+              <Text key={i} style={styles.debugText}>{log}</Text>
+            ))}
+          </View>
+        )}
+      </ScrollView>
 
       <View style={styles.footer}>
-        {selectedFile && (
+        {selectedFile ? (
           <Button
             title="Encrypt & Upload"
             onPress={handleUpload}
             loading={isUploading}
+            disabled={!masterKey || !user}
           />
-        )}
-        {!selectedFile && (
+        ) : (
           <Button
             title="Select Document"
             onPress={handleSelectFile}
@@ -228,12 +318,46 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.h3.fontWeight,
     color: theme.colors.textPrimary,
   },
-  placeholder: {
+  testButton: {
     width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     padding: theme.spacing.lg,
+  },
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.lg,
+  },
+  statusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statusText: {
+    fontSize: theme.typography.caption.fontSize,
+    color: theme.colors.textMuted,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: theme.colors.error,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: theme.typography.bodySmall.fontSize,
+    color: theme.colors.errorText,
+    marginLeft: theme.spacing.sm,
   },
   dropzone: {
     borderWidth: 2,
@@ -310,6 +434,24 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.bodySmall.fontSize,
     color: theme.colors.textMuted,
     marginLeft: theme.spacing.md,
+  },
+  debugBox: {
+    marginTop: theme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+  },
+  debugTitle: {
+    fontSize: theme.typography.caption.fontSize,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
+  },
+  debugText: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    fontFamily: 'monospace',
+    marginBottom: 2,
   },
   footer: {
     padding: theme.spacing.lg,
