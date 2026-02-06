@@ -2,7 +2,6 @@
 // Orchestrates encryption, sharding, upload/download
 // All operations happen client-side
 
-import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { encryptDocument, decryptDocument } from '../crypto/encryption';
 import { splitIntoShards, reassembleShards, Shard } from '../crypto/sharding';
@@ -33,6 +32,7 @@ export async function pickDocument(): Promise<{
   name?: string;
   mimeType?: string;
   size?: number;
+  base64?: string;
   error?: string;
 }> {
   try {
@@ -62,27 +62,30 @@ export async function pickDocument(): Promise<{
 }
 
 /**
- * Read file content as base64
+ * Read file content as base64 using fetch
  */
 async function readFileAsBase64(uri: string): Promise<string> {
   try {
     console.log('Reading file from:', uri);
     
-    // Check if file exists
-    const fileInfo = await FileSystem.getInfoAsync(uri);
-    console.log('File info:', fileInfo);
+    // Use fetch to read file as blob, then convert to base64
+    const response = await fetch(uri);
+    const blob = await response.blob();
     
-    if (!fileInfo.exists) {
-      throw new Error('File does not exist');
-    }
-    
-    // Read file as base64 - use string directly instead of enum
-    const content = await FileSystem.readAsStringAsync(uri, {
-      encoding: 'base64',
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        // Remove data URL prefix if present
+        const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
+        console.log('File read successfully, length:', base64Data.length);
+        resolve(base64Data);
+      };
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
+      };
+      reader.readAsDataURL(blob);
     });
-    
-    console.log('File read successfully, length:', content.length);
-    return content;
   } catch (error: any) {
     console.error('Error reading file:', error);
     throw new Error(`Failed to read file: ${error.message}`);
