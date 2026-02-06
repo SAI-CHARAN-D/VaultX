@@ -102,14 +102,7 @@ export default function UploadScreen() {
     addLog(`Master key available: ${!!masterKey}`);
     
     try {
-      // First test bucket access
-      addLog('Checking bucket access...');
-      const bucketCheck = await checkBucketAccess();
-      if (!bucketCheck.success) {
-        throw new Error(bucketCheck.error || 'Bucket not accessible');
-      }
-      addLog('✓ Bucket accessible');
-      
+      // Skip bucket check - just try to upload directly
       addLog('Starting encryption and upload...');
       const result = await uploadDocument(
         selectedFile.uri,
