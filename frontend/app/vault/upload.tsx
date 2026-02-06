@@ -43,13 +43,29 @@ export default function UploadScreen() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !masterKey || !user) {
+    if (!selectedFile) {
       Alert.alert('Error', 'Please select a file first');
+      return;
+    }
+    
+    if (!masterKey) {
+      Alert.alert('Error', 'Vault is locked. Please unlock first.');
+      router.replace('/vault/unlock');
+      return;
+    }
+    
+    if (!user) {
+      Alert.alert('Error', 'Not authenticated. Please sign in.');
+      router.replace('/auth/signin');
       return;
     }
     
     setIsUploading(true);
     setProgress({ stage: 'encrypting', progress: 0 });
+    
+    console.log('Starting upload for:', selectedFile.name);
+    console.log('User ID:', user.id);
+    console.log('Master key available:', !!masterKey);
     
     try {
       const result = await uploadDocument(
@@ -59,8 +75,13 @@ export default function UploadScreen() {
         selectedFile.size,
         masterKey,
         user.id,
-        setProgress
+        (prog) => {
+          console.log('Progress:', prog);
+          setProgress(prog);
+        }
       );
+      
+      console.log('Upload result:', result);
       
       if (result.success && result.document) {
         await addDocument(result.document);
@@ -70,9 +91,11 @@ export default function UploadScreen() {
           [{ text: 'OK', onPress: () => router.back() }]
         );
       } else {
-        Alert.alert('Upload Failed', result.error || 'Unknown error');
+        console.error('Upload failed:', result.error);
+        Alert.alert('Upload Failed', result.error || 'Unknown error. Check if vault-shards bucket exists in Supabase.');
       }
     } catch (error: any) {
+      console.error('Upload exception:', error);
       Alert.alert('Upload Failed', error.message || 'Unknown error');
     } finally {
       setIsUploading(false);
