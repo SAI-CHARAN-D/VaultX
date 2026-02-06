@@ -19,13 +19,32 @@ export async function signUp(email: string, password: string): Promise<AuthResul
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        // Disable email confirmation for easier development
+        emailRedirectTo: undefined,
+      },
     });
     
     if (error) {
+      // Handle rate limit error with user-friendly message
+      if (error.message.includes('rate limit') || error.message.includes('Rate limit')) {
+        return { 
+          success: false, 
+          error: 'Too many signup attempts. Please wait a few minutes and try again.' 
+        };
+      }
       return { success: false, error: error.message };
     }
     
     if (data.user) {
+      // Check if email confirmation is required
+      if (data.user.identities && data.user.identities.length === 0) {
+        return { 
+          success: false, 
+          error: 'This email is already registered. Please sign in instead.' 
+        };
+      }
+      
       return {
         success: true,
         user: {
